@@ -1,3 +1,6 @@
+#!/usr/bin/env stack
+-- stack --resolver lts-17.4 script
+
 import qualified Text.Read as R
 import Data.Array
 import Data.List (intercalate)
@@ -7,7 +10,10 @@ import Control.Monad.State
 --import Control.Monad.Trans.State.Lazy
 
 data Move = X | O deriving (Show, Eq)
-newtype Position = Position ( Int, Int ) deriving (Show, Eq, Ord, Ix)
+newtype Position = Position ( Int, Int ) deriving (Eq, Ord, Ix)
+
+instance Show Position where
+  show ( Position (x, y) ) = show ( x, y )
 
 type Cell = Maybe Move
 
@@ -16,25 +22,19 @@ displayCell ( Just move ) = show move
 displayCell Nothing = " "
 
 type SubBoard = Array Position Cell
-
-displaySubBoard :: SubBoard -> String
-displaySubBoard sb = intercalate "---------------------\n" [ displayRow y | y <- [1..3]]
-  where
-    displayRow :: Int -> String
-    displayRow y = intercalate " | " [show ( sb ! Position (x, y) ) | x <- [1..3]]
-
 type Board = Array Position SubBoard
 
 displayBoard :: Board -> String
-displayBoard board = intercalate longBar [ displaySBRow y | y <- [1..3] ]
+displayBoard board = "\n" ++ intercalate longBar [ displaySBRow y | y <- [1..3] ] ++ "\n\n"
   where
-    longBar = "----------------------------------------------------------------------------------------\n"
+    longBar = "\n-------------------------------------\n"
+    longGappedBar = "\n---------- | ----------- | ----------\n"
 
     displaySBRow :: Int -> String
-    displaySBRow y = intercalate "---------------------" [ intercalate "  |  " ( displayAcross y y' ) | y' <- [1..3] ]
+    displaySBRow y = intercalate longGappedBar [ intercalate "  |  " ( displayAcross y y' ) | y' <- [1..3] ]
 
     displayAcross :: Int -> Int -> [String]
-    displayAcross y y' = [intercalate " | " [show ( ( board ! Position (x, y) ) ! Position (x', y') ) | x' <- [1..3]] | x <- [1..3]]
+    displayAcross y y' = [intercalate " | " [displayCell ( ( board ! Position (x, y) ) ! Position (x', y') ) | x' <- [1..3]] | x <- [1..3]]
 
 --------------------------
 
@@ -48,11 +48,11 @@ getPosition =
         do xRaw <- getLine
            case R.readMaybe xRaw :: Maybe Int of
              Just x -> return x
-             Nothing -> getInt
+             Nothing -> putStrLn "Invalid move." >> getInt
   in
-    do putStrLn "Input a row."
+    do putStr "Column: "
        x <- getInt
-       putStrLn "Input a column."
+       putStr "Row: "
        y <- getInt
        return $ Position ( x, y )
 
@@ -96,6 +96,8 @@ checkWinner = mapStateT $ liftM checkWinner'
 playRound :: Move -> Position -> StateT Board IO Position
 playRound move pos =
   do board <- get
+     lift $ putStr $ displayBoard board
+     lift $ putStrLn ( "Player " ++ show move ++ ", please choose a cell in square " ++ show pos ++ ".")
      newPos <- lift $ getEmptyPosition pos board
      put $ updateBoard move pos newPos board
      return newPos
@@ -115,7 +117,7 @@ main =
   do putStrLn "Input the initial square to play in."
      pos <- getPosition
      finalBoard <- execStateT ( playGame $ Right pos ) emptyBoard
-     print $ show finalBoard
+     print $ displayBoard finalBoard
   where
     emptySubBoard :: SubBoard
     emptySubBoard = array (Position (1, 1), Position (3, 3)) [(Position (i, j), Nothing) | i <- [1..3], j <- [1..3]]
