@@ -1,5 +1,6 @@
 import qualified Text.Read as R
 import Data.Array
+import Data.List (intercalate)
 import Data.Foldable
 import Control.Applicative
 import Control.Monad.State
@@ -7,10 +8,35 @@ import Control.Monad.State
 
 data Move = X | O deriving (Show, Eq)
 newtype Position = Position ( Int, Int ) deriving (Show, Eq, Ord, Ix)
+
 type Cell = Maybe Move
 
+displayCell :: Cell -> String
+displayCell ( Just move ) = show move
+displayCell Nothing = " "
+
 type SubBoard = Array Position Cell
+
+displaySubBoard :: SubBoard -> String
+displaySubBoard sb = intercalate "---------------------\n" [ displayRow y | y <- [1..3]]
+  where
+    displayRow :: Int -> String
+    displayRow y = intercalate " | " [show ( sb ! Position (x, y) ) | x <- [1..3]]
+
 type Board = Array Position SubBoard
+
+displayBoard :: Board -> String
+displayBoard board = intercalate longBar [ displaySBRow y | y <- [1..3] ]
+  where
+    longBar = "----------------------------------------------------------------------------------------\n"
+
+    displaySBRow :: Int -> String
+    displaySBRow y = intercalate "---------------------" [ intercalate "  |  " ( displayAcross y y' ) | y' <- [1..3] ]
+
+    displayAcross :: Int -> Int -> [String]
+    displayAcross y y' = [intercalate " | " [show ( ( board ! Position (x, y) ) ! Position (x', y') ) | x' <- [1..3]] | x <- [1..3]]
+
+--------------------------
 
 updateBoard :: Move -> Position -> Position -> Board -> Board
 updateBoard move pos newPos board = board // [(pos, newSubBoard)]
@@ -37,13 +63,6 @@ getEmptyPosition pos board =
   where
     isEmpty :: Position -> SubBoard -> Bool
     isEmpty pos sb = sb ! pos == Nothing
-
-playRound :: Move -> Position -> StateT Board IO Position
-playRound move pos =
-  do board <- get
-     newPos <- lift $ getEmptyPosition pos board
-     put $ updateBoard move pos newPos board
-     return newPos
 
 -- The list of three in a rows
 rows :: [[Position]]
@@ -73,6 +92,13 @@ checkWinner = mapStateT $ liftM checkWinner'
     checkWinner' (pos, board) = case hasWinnerBoard board of
                                   Just move -> (Left move, board)
                                   Nothing -> (Right pos, board)
+
+playRound :: Move -> Position -> StateT Board IO Position
+playRound move pos =
+  do board <- get
+     newPos <- lift $ getEmptyPosition pos board
+     put $ updateBoard move pos newPos board
+     return newPos
 
 -- Similar to play round but with short circuit when a winner is found
 playRoundAugmented :: Move -> Either Move Position -> StateT Board IO ( Either Move Position )
