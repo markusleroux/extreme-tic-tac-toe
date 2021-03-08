@@ -1,3 +1,4 @@
+import qualified Text.Read as R
 import Data.Array
 import Data.Foldable
 import Control.Applicative
@@ -17,17 +18,30 @@ updateBoard move pos newPos board = board // [(pos, newSubBoard)]
 
 getPosition :: IO Position
 getPosition =
-  do x <- getLine
-     y <- getLine
-     return $ Position ( read x :: Int, read y :: Int )
+  let getInt =
+        do xRaw <- getLine
+           case R.readMaybe xRaw :: Maybe Int of
+             Just x -> return x
+             Nothing -> getInt
+  in
+    do putStrLn "Input a row."
+       x <- getInt
+       putStrLn "Input a column."
+       y <- getInt
+       return $ Position ( x, y )
 
-isEmpty :: Position -> SubBoard -> Bool
-isEmpty pos sb = sb ! pos == Nothing
+getEmptyPosition :: Position -> Board -> IO Position
+getEmptyPosition pos board =
+  do newPos <- getPosition
+     if isEmpty newPos ( board ! pos ) then return newPos else getEmptyPosition pos board
+  where
+    isEmpty :: Position -> SubBoard -> Bool
+    isEmpty pos sb = sb ! pos == Nothing
 
 playRound :: Move -> Position -> StateT Board IO Position
 playRound move pos =
   do board <- get
-     newPos <- lift getPosition
+     newPos <- lift $ getEmptyPosition pos board
      put $ updateBoard move pos newPos board
      return newPos
 
@@ -39,19 +53,16 @@ rows = [ [Position (i, j) | i <- [1..3]] | j <- [1..3] ] ++
 
 -- Return Just Move if everything in the list is held by the same person otherwise return Nothing
 allCaptured :: [Maybe Move] -> Maybe Move
-allCaptured mm = if and $ map ( == head mm ) ( tail mm ) then head mm else Nothing
+allCaptured mms = if and $ map ( == head mms ) ( tail mms ) then head mms else Nothing
 
 -- Given a list of list of indices, apply the function with signature [e] -> f a to each
 -- list of values in the corresponding list of list of values. Then use <|> repeatedly on
 -- the resulting list [ f a ] to arrive at a single f a
 hasWinner :: ( Ix i, Alternative f ) => [[i]] -> ( [e] -> f a ) -> Array i e -> f a
-hasWinner rows pred array = asum ( map pred [ [ array ! pos | pos <- row ] | row <- rows ] )
+hasWinner rs p arr = asum ( map p [ [ arr ! pos | pos <- r ] | r <- rs ] )
 
 hasWinnerBoard :: Board -> Maybe Move
-hasWinnerBoard = hasWinner rows $ allCaptured . ( map $ hasWinnerSubBoard )
-  where
-    hasWinnerSubBoard :: SubBoard -> Maybe Move
-    hasWinnerSubBoard = hasWinner rows allCaptured
+hasWinnerBoard = hasWinner rows $ allCaptured . ( map $ hasWinner rows allCaptured )
 
 -- Use hasWinnerBoard to check board at end of each round
 checkWinner :: StateT Board IO Position -> StateT Board IO ( Either Move Position )
@@ -65,10 +76,7 @@ checkWinner = mapStateT $ liftM checkWinner'
 
 -- Similar to play round but with short circuit when a winner is found
 playRoundAugmented :: Move -> Either Move Position -> StateT Board IO ( Either Move Position )
-playRoundAugmented move e = case e of
-                              Right pos -> checkWinner $ playRound move pos
-                              Left a -> return ( Left a )
-
+playRoundAugmented move = either ( return . Left ) ( checkWinner . ( playRound move ) )
 
 playGame :: Either Move Position -> StateT Board IO ( Either Move Position )
 playGame = foldl ( >=> ) return rounds
@@ -78,7 +86,8 @@ playGame = foldl ( >=> ) return rounds
 
 main :: IO ()
 main =
-  do pos <- getPosition
+  do putStrLn "Input the initial square to play in."
+     pos <- getPosition
      finalBoard <- execStateT ( playGame $ Right pos ) emptyBoard
      print $ show finalBoard
   where
