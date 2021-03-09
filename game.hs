@@ -7,7 +7,8 @@ import Data.List (intercalate)
 import Data.Foldable
 import Control.Applicative
 import Control.Monad.State
---import Control.Monad.Trans.State.Lazy
+
+--------------------------
 
 data Move = X | O deriving (Show, Eq)
 newtype Position = Position ( Int, Int ) deriving (Eq, Ord, Ix)
@@ -25,22 +26,42 @@ type SubBoard = Array Position Cell
 type Board = Array Position SubBoard
 
 displayBoard :: Board -> String
-displayBoard board = "\n" ++ intercalate longBar [ displaySBRow y | y <- [1..3] ] ++ "\n\n"
+displayBoard b = "\n" ++ intercalate longBar [ displaySBRow y | y <- [1..3] ] ++ "\n\n"
   where
     longBar = "\n-------------------------------------\n"
     longGappedBar = "\n---------- | ----------- | ----------\n"
 
     displaySBRow :: Int -> String
-    displaySBRow y = intercalate longGappedBar [ intercalate "  |  " ( displayAcross y y' ) | y' <- [1..3] ]
+    displaySBRow y = intercalate longGappedBar [ displayAcross y y' | y' <- [1..3] ]
 
-    displayAcross :: Int -> Int -> [String]
-    displayAcross y y' = [intercalate " | " [displayCell ( ( board ! Position (x, y) ) ! Position (x', y') ) | x' <- [1..3]] | x <- [1..3]]
+    -- display entire row across multiple subboards
+    displayAcross :: Int -> Int -> String
+    displayAcross y y' = intercalate "  |  " [intercalate " | " [displayCell $ getCell x y x' y' | x' <- [1..3]] | x <- [1..3]]
 
---------------------------
+    getCell :: Int -> Int -> Int -> Int -> Cell
+    getCell x y x' y' = ( b ! Position (x, y) ) ! Position (x', y')
 
 updateBoard :: Move -> Position -> Position -> Board -> Board
-updateBoard move pos newPos board = board // [(pos, newSubBoard)]
-  where newSubBoard = board ! pos // [(newPos, Just move)]
+updateBoard move pos newPos b = b // [(pos, newSubBoard)]
+  where newSubBoard = b ! pos // [(newPos, Just move)]
+
+data GameState =
+  GS { board :: Board
+     , meta :: SubBoard
+     }
+
+updateGameState :: Move -> Position -> Position -> GameState -> GameState
+updateGameState move pos newPos gs = GS nb nm
+  where
+    nb :: Board
+    nb = updateBoard move pos newPos ( board gs )
+
+    nm :: SubBoard
+    nm = case hasWinner rows allCaptured $ board gs ! pos of
+           Just m -> if meta gs ! pos == Nothing then meta gs // [(pos, Just m)] else meta gs
+           Nothing -> meta gs
+
+--------------------------
 
 getPosition :: IO Position
 getPosition =
@@ -48,7 +69,7 @@ getPosition =
         do xRaw <- getLine
            case R.readMaybe xRaw :: Maybe Int of
              Just x -> return x
-             Nothing -> putStrLn "Invalid move." >> getInt
+             Nothing -> putStrLn "Invalid input." >> getInt
   in
     do putStr "Column: "
        x <- getInt
@@ -57,12 +78,12 @@ getPosition =
        return $ Position ( x, y )
 
 getEmptyPosition :: Position -> Board -> IO Position
-getEmptyPosition pos board =
+getEmptyPosition pos b =
   do newPos <- getPosition
-     if isEmpty newPos ( board ! pos ) then return newPos else getEmptyPosition pos board
+     if isEmpty newPos ( b ! pos ) then return newPos else putStrLn "Invalid move. Try again:" >> getEmptyPosition pos b
   where
     isEmpty :: Position -> SubBoard -> Bool
-    isEmpty pos sb = sb ! pos == Nothing
+    isEmpty p sb = sb ! p == Nothing
 
 -- The list of three in a rows
 rows :: [[Position]]
@@ -80,44 +101,48 @@ allCaptured mms = if and $ map ( == head mms ) ( tail mms ) then head mms else N
 hasWinner :: ( Ix i, Alternative f ) => [[i]] -> ( [e] -> f a ) -> Array i e -> f a
 hasWinner rs p arr = asum ( map p [ [ arr ! pos | pos <- r ] | r <- rs ] )
 
-hasWinnerBoard :: Board -> Maybe Move
-hasWinnerBoard = hasWinner rows $ allCaptured . ( map $ hasWinner rows allCaptured )
+hasWinnerSB :: SubBoard -> Maybe Move
+hasWinnerSB = hasWinner rows $ allCaptured
 
 -- Use hasWinnerBoard to check board at end of each round
-checkWinner :: StateT Board IO Position -> StateT Board IO ( Either Move Position )
+checkWinner :: StateT GameState IO Position -> StateT GameState IO ( Either Move Position )
 checkWinner = mapStateT $ liftM checkWinner'
   where
     -- Move from Maybe to Either
-    checkWinner' :: (Position, Board) -> (Either Move Position, Board)
-    checkWinner' (pos, board) = case hasWinnerBoard board of
-                                  Just move -> (Left move, board)
-                                  Nothing -> (Right pos, board)
+    checkWinner' :: (Position, GameState) -> (Either Move Position, GameState)
+    checkWinner' (pos, gs) = case hasWinnerSB $ meta gs of
+                                  Just move -> (Left move, gs)
+                                  Nothing -> (Right pos, gs)
 
-playRound :: Move -> Position -> StateT Board IO Position
+playRound :: Move -> Position -> StateT GameState IO Position
 playRound move pos =
-  do board <- get
-     lift $ putStr $ displayBoard board
+  do gs <- get
+     let b = board gs
+     lift $ putStr $ displayBoard b
      lift $ putStrLn ( "Player " ++ show move ++ ", please choose a cell in square " ++ show pos ++ ".")
-     newPos <- lift $ getEmptyPosition pos board
-     put $ updateBoard move pos newPos board
+     newPos <- lift $ getEmptyPosition pos b
+     put $ updateGameState move pos newPos gs
      return newPos
 
 -- Similar to play round but with short circuit when a winner is found
-playRoundAugmented :: Move -> Either Move Position -> StateT Board IO ( Either Move Position )
+playRoundAugmented :: Move -> Either Move Position -> StateT GameState IO ( Either Move Position )
 playRoundAugmented move = either ( return . Left ) ( checkWinner . ( playRound move ) )
 
-playGame :: Either Move Position -> StateT Board IO ( Either Move Position )
+playGame :: Either Move Position -> StateT GameState IO ( Either Move Position )
 playGame = foldl ( >=> ) return rounds
   where
-    rounds :: [ Either Move Position -> StateT Board IO ( Either Move Position ) ]
+    rounds :: [ Either Move Position -> StateT GameState IO ( Either Move Position ) ]
     rounds = map playRoundAugmented $ concat [[X, O] | _ <- [( 1 :: Int )..81]]
 
 main :: IO ()
 main =
   do putStrLn "Input the initial square to play in."
      pos <- getPosition
-     finalBoard <- execStateT ( playGame $ Right pos ) emptyBoard
-     print $ displayBoard finalBoard
+     (eitherMove, finalGS) <- runStateT ( playGame $ Right pos ) $ GS emptyBoard emptySubBoard
+     case eitherMove of
+       Left move -> putStrLn $ "Player " ++ show move ++ " wins!"
+       Right _ -> putStrLn $ "Nobody wins."
+     print $ displayBoard $ board finalGS
   where
     emptySubBoard :: SubBoard
     emptySubBoard = array (Position (1, 1), Position (3, 3)) [(Position (i, j), Nothing) | i <- [1..3], j <- [1..3]]
