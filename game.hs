@@ -4,8 +4,9 @@
 import qualified Text.Read as R
 import Data.Array
 import Data.List (intercalate)
-import Data.Foldable
-import Control.Applicative
+import Data.Either.Combinators (maybeToLeft)
+import Data.Foldable (asum)
+import Control.Applicative (Alternative)
 import Control.Monad.State
 
 --------------------------
@@ -31,6 +32,7 @@ displayBoard b = "\n" ++ intercalate longBar [ displaySBRow y | y <- [1..3] ] ++
     longBar = "\n-------------------------------------\n"
     longGappedBar = "\n---------- | ----------- | ----------\n"
 
+    -- display subboards in one row
     displaySBRow :: Int -> String
     displaySBRow y = intercalate longGappedBar [ displayAcross y y' | y' <- [1..3] ]
 
@@ -57,7 +59,7 @@ updateGameState move pos newPos gs = GS nb nm
     nb = updateBoard move pos newPos ( board gs )
 
     nm :: SubBoard
-    nm = case hasWinner rows allCaptured $ board gs ! pos of
+    nm = case hasWinnerSB $ board gs ! pos of
            Just m -> if meta gs ! pos == Nothing then meta gs // [(pos, Just m)] else meta gs
            Nothing -> meta gs
 
@@ -65,17 +67,16 @@ updateGameState move pos newPos gs = GS nb nm
 
 getPosition :: IO Position
 getPosition =
-  let getInt =
-        do xRaw <- getLine
-           case R.readMaybe xRaw :: Maybe Int of
-             Just x -> return x
-             Nothing -> putStrLn "Invalid input." >> getInt
-  in
-    do putStr "Column: "
-       x <- getInt
-       putStr "Row: "
-       y <- getInt
-       return $ Position ( x, y )
+  do x <- putStr "Column: " >> getInt
+     y <- putStr "Row: " >> getInt
+     return $ Position ( x, y )
+  where
+    getInt :: IO Int
+    getInt =
+      do xRaw <- getLine
+         case R.readMaybe xRaw :: Maybe Int of
+           Just x -> if x >= 1 && x <= 3 then return x else putStrLn "Please choose an integer in [1, 3]" >> getInt
+           Nothing -> putStrLn "Invalid input." >> getInt
 
 getEmptyPosition :: Position -> Board -> IO Position
 getEmptyPosition pos b =
@@ -91,18 +92,18 @@ rows = [ [Position (i, j) | i <- [1..3]] | j <- [1..3] ] ++
        [ [Position (i, j) | j <- [1..3]] | i <- [1..3] ] ++
        [ [Position (i, i) | i <- [1..3]], [Position (i, 4 - i) | i <- [1..3]] ]
 
--- Return Just Move if everything in the list is held by the same person otherwise return Nothing
-allCaptured :: [Maybe Move] -> Maybe Move
-allCaptured mms = if and $ map ( == head mms ) ( tail mms ) then head mms else Nothing
-
--- Given a list of list of indices, apply the function with signature [e] -> f a to each
--- list of values in the corresponding list of list of values. Then use <|> repeatedly on
--- the resulting list [ f a ] to arrive at a single f a
-hasWinner :: ( Ix i, Alternative f ) => [[i]] -> ( [e] -> f a ) -> Array i e -> f a
-hasWinner rs p arr = asum ( map p [ [ arr ! pos | pos <- r ] | r <- rs ] )
-
 hasWinnerSB :: SubBoard -> Maybe Move
 hasWinnerSB = hasWinner rows $ allCaptured
+  where
+    -- Given a list of list of indices, apply the function with signature [e] -> f a to each
+    -- list of values in the corresponding list of list of values. Then use <|> repeatedly on
+    -- the resulting list [ f a ] to arrive at a single f a
+    hasWinner :: ( Ix i, Alternative f ) => [[i]] -> ( [e] -> f a ) -> Array i e -> f a
+    hasWinner rs p arr = asum ( map p [ [ arr ! pos | pos <- r ] | r <- rs ] )
+
+    -- Return Just Move if everything in the list is held by the same person otherwise return Nothing
+    allCaptured :: [Maybe Move] -> Maybe Move
+    allCaptured mms = if and $ map ( == head mms ) ( tail mms ) then head mms else Nothing
 
 -- Use hasWinnerBoard to check board at end of each round
 checkWinner :: StateT GameState IO Position -> StateT GameState IO ( Either Move Position )
@@ -110,9 +111,7 @@ checkWinner = mapStateT $ liftM checkWinner'
   where
     -- Move from Maybe to Either
     checkWinner' :: (Position, GameState) -> (Either Move Position, GameState)
-    checkWinner' (pos, gs) = case hasWinnerSB $ meta gs of
-                                  Just move -> (Left move, gs)
-                                  Nothing -> (Right pos, gs)
+    checkWinner' (pos, gs) = (maybeToLeft pos ( hasWinnerSB $ meta gs ), gs)
 
 playRound :: Move -> Position -> StateT GameState IO Position
 playRound move pos =
@@ -136,8 +135,7 @@ playGame = foldl ( >=> ) return rounds
 
 main :: IO ()
 main =
-  do putStrLn "Input the initial square to play in."
-     pos <- getPosition
+  do pos <- putStrLn "Input the initial square to play in." >> getPosition
      (eitherMove, finalGS) <- runStateT ( playGame $ Right pos ) $ GS emptyBoard emptySubBoard
      case eitherMove of
        Left move -> putStrLn $ "Player " ++ show move ++ " wins!"
