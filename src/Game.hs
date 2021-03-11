@@ -1,9 +1,6 @@
-#!/usr/bin/env stack
--- stack --resolver lts-17.4 script
-
 {-# LANGUAGE TemplateHaskell #-}
 
-module TicTacToe where
+module Game where
 
 import Data.Array
 import Data.List (intercalate)
@@ -63,34 +60,34 @@ data GameState =
 $(makeLenses ''GameState)
 
 data Direction
-  = Up
-  | Down
-  | Left
-  | Right
+  = North
+  | South
+  | West
+  | East
   deriving (Eq, Show)
 
 moveCursor :: Direction -> GameState -> GameState
-moveCursor Up = cursor . _2 %~ ( \ y -> if y > 1 then y - 1 else y )
-moveCursor Down = cursor . _2 %~ ( \ y -> if y < 3 then y + 1 else y )
-moveCursor Right = cursor . _1 %~ ( \ x -> if x < 3 then x + 1 else x )
-moveCursor Left = cursor . _1 %~ ( \ x -> if x > 1 then x - 1 else x )
+moveCursor North = cursor . _2 %~ ( \ y -> if y > 1 then y - 1 else y )
+moveCursor South = cursor . _2 %~ ( \ y -> if y < 3 then y + 1 else y )
+moveCursor East = cursor . _1 %~ ( \ x -> if x < 3 then x + 1 else x )
+moveCursor West = cursor . _1 %~ ( \ x -> if x > 1 then x - 1 else x )
 
 -- Game logic
 --------------------------
 
 playSquare :: GameState -> GameState
 playSquare gs =
-  if isNothing $ gs ^. ppos . cursor
-     then playEmptySauare gs
-     else gs
+  if isJust $ ( ( gs ^. board ) ! ( gs ^. ppos ) ) ! ( gs ^. cursor )
+     then gs
+     else playEmptySquare gs
 
 playEmptySquare :: GameState -> GameState
 playEmptySquare gs =
   gs
     & player %~ ( \ p -> if p == X then O else X )
-    & board %~ updateBoard ( gs ^. player ) pos newPos
+    & board %~ updateBoard ( gs ^. player ) pos ( gs ^. cursor )
     & meta .~ updatedMeta
-    & ppos .~ newPos
+    & ppos .~ ( gs ^. cursor )
     & finished .~ ( hasWinnerMb $ gs ^. meta )
   where
     pos :: Position

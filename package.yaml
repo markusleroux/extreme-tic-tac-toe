@@ -1,0 +1,26 @@
+name:                extremeTicTacToe
+version:             0.1.0.0
+#synopsis:
+#description:
+homepage:            https://github.com/markusleroux/extremeTicTacToe#readme
+license:             BSD3
+author:              Markus Le Roux
+maintainer:          markusleroux314@gmail.com
+copyright:           GNU GPL
+category:            Game
+extra-source-files:
+- README.md
+
+dependencies:
+  - base >= 4.7 && < 5
+  - array
+  - lens
+  - microlens
+  - microlens-th
+  - brick
+  - vty
+
+executables:
+  extremeTicTacToe:
+    source-dirs:      src
+    main:             Main.hs

@@ -1,9 +1,6 @@
-#!/usr/bin/env stack
--- stack --resolver lts-17.4 script
-
 module UI where
 
-import TicTacToe
+import Game
 
 import Brick
 
@@ -20,14 +17,11 @@ app =
       , appAttrMap = const theMap
       }
 
-main :: IO ()
-main = undefined
-
 handleEvent :: GameState -> BrickEvent Name () -> EventM Name ( Next GameState )
-handleEvent gs (VtyEvent (V.EvKey V.KUp []))         = continue $ moveCursor Up gs
-handleEvent gs (VtyEvent (V.EvKey V.KDown []))       = continue $ moveCursor Down gs
-handleEvent gs (VtyEvent (V.EvKey V.KRight []))      = continue $ moveCursor Right gs
-handleEvent gs (VtyEvent (V.EvKey V.KLeft []))       = continue $ moveCursor Left gs
+handleEvent gs (VtyEvent (V.EvKey V.KUp []))         = continue $ moveCursor North gs
+handleEvent gs (VtyEvent (V.EvKey V.KDown []))       = continue $ moveCursor South gs
+handleEvent gs (VtyEvent (V.EvKey V.KRight []))      = continue $ moveCursor East gs
+handleEvent gs (VtyEvent (V.EvKey V.KLeft []))       = continue $ moveCursor West gs
 handleEvent gs (VtyEvent (V.EvKey V.KEnter []))      = continue $ playSquare gs
 handleEvent gs (VtyEvent (V.EvKey (V.KChar 'q') [])) = halt gs
 handleEvent gs (VtyEvent (V.EvKey V.KEsc []))        = halt gs
