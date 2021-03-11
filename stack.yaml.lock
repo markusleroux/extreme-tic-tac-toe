@@ -9,4 +9,11 @@ snapshots:
     sha256: f11e2153044f5f71ea7b1c9398f4721f517c9bd37642ed769647b896564021f3
     url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/17/4.yaml
     size: 563103
-packages: []
+packages:
+- original:
+    hackage: brick-0.60.2
+  completed:
+    pantry-tree:
+      sha256: 5731efcd3df37bbae3d79f100f7615492ad787666b7d0ce249cb56e3718e2eca
+      size: 6189
+    hackage: brick-0.60.2@sha256:61df81396faec9fd695d1959a5b54d3c524b02e71db179395700a2f1b68ef614,16152

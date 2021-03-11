@@ -28,21 +28,21 @@ type SubBoard = Array Position Cell
 type Board = Array Position SubBoard
 
 displayBoard :: Board -> String
-displayBoard b = "\n" ++ intercalate longBar [ displaySBRow y | y <- [1..3] ] ++ "\n\n"
+displayBoard b = "\n" ++ intercalate longBar [ displayBoardRow y | y <- [1..3] ] ++ "\n\n"
   where
     longBar = "\n-------------------------------------\n"
     longGappedBar = "\n---------- | ----------- | ----------\n"
 
     -- display subboards in one row
-    displaySBRow :: Int -> String
-    displaySBRow y = intercalate longGappedBar [ displayAcross y y' | y' <- [1..3] ]
+    displayBoardRow :: Int -> String
+    displayBoardRow y = intercalate longGappedBar [ displayAcross y y' | y' <- [1..3] ]
 
     -- display entire row across multiple subboards
     displayAcross :: Int -> Int -> String
-    displayAcross y y' = intercalate "  |  " [intercalate " | " [displayCell $ getCell x y x' y' | x' <- [1..3]] | x <- [1..3]]
+    displayAcross y y' = intercalate "  |  " [ displaySBRow x y y' | x <- [1..3]]
 
-    getCell :: Int -> Int -> Int -> Int -> Cell
-    getCell x y x' y' = ( b ! (x, y) ) ! (x', y')
+    displaySBRow :: Int -> Int -> Int -> String
+    displaySBRow x y y' = intercalate " | " [displayCell $ ( b ! (x, y) ) ! (x', y') | x' <- [1..3]]
 
 updateBoard :: Move -> Position -> Position -> Board -> Board
 updateBoard move pos newPos b = b // [(pos, newSubBoard)]

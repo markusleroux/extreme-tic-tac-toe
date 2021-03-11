@@ -17,8 +17,8 @@ dependencies:
   - lens
   - microlens
   - microlens-th
-  - brick
   - vty
+  - brick
 
 executables:
   extremeTicTacToe:
