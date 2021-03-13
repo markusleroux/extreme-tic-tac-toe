@@ -11,6 +11,7 @@ import Data.Array ((!))
 import Lens.Micro ((^.))
 
 import qualified Brick.Widgets.Center as C
+import qualified Brick.Widgets.Border as B
 import qualified Graphics.Vty as V
 
 ----------------------
@@ -41,60 +42,78 @@ handleEvent gs _                                     = continue gs
 ----------------------
 
 drawUI :: GameState -> [ Widget Name ]
-drawUI = return . bw
+drawUI gs = return ( boardW gs <+> scoresW gs )
 
-bw :: GameState -> Widget Name
-bw gs = C.centerLayer $ renderTable
+scoresW :: GameState -> Widget Name
+scoresW gs = let met = gs ^. meta in
+  C.vCenter
+  $ padLeft ( Pad 10 )
+  $ hLimit 8
+  $ vLimit 4
+  $ vBox [ C.hCenter $ str "Score"
+         , C.hCenter $ B.hBorder
+         , C.hCenter $ scoreW X met
+         , C.hCenter $ scoreW O met
+         ]
+
+scoreW :: Move -> SubBoard -> Widget Name
+scoreW mv sb = str $ show mv ++ ": " ++ ( show $ count mv sb )
+
+boardW :: GameState -> Widget Name
+boardW gs = C.centerLayer
+  $ B.borderWithLabel ( str " TicTacToe " )
+  $ separateBorders
+  $ renderTable
   $ surroundingBorder False
   $ setDefaultRowAlignment AlignMiddle
   $ setDefaultColAlignment AlignCenter
-  $ table rowsOfSB
+  $ table rowsOfSBW
   where
-    rowsOfSB :: [ [ Widget Name ]]
-    rowsOfSB = [ [ getSBW x y | x <- [1..3] ] | y <- [1..3] ]
+    rowsOfSBW :: [ [ Widget Name ] ]
+    rowsOfSBW = [ [ getSBW x y | x <- [1..3] ] | y <- [1..3] ]
 
     getSBW :: Int -> Int -> Widget Name
     getSBW x y = let ( fx, fy ) = gs ^. cursor
                      isFocus = ( x, y ) == ( gs ^. ppos )
-                     w = sbw fx fy isFocus $ ( gs ^. board ) ! ( x, y ) in
+                     w = subBoardW fx fy isFocus $ ( gs ^. board ) ! ( x, y ) in
       if isFocus
          then withAttr fSBAttr w
-         else withAttr uSBAttr w
+         else w
 
 
-sbw :: Int -> Int -> Bool -> SubBoard -> Widget Name
-sbw fx fy isFocus sb = renderTable
+subBoardW :: Int -> Int -> Bool -> SubBoard -> Widget Name
+subBoardW fx fy isFocus sb =
+  padLeftRight 2
+  $ padTopBottom 1
+  $ separateBorders
+  $ renderTable
   $ surroundingBorder False
   $ setDefaultRowAlignment AlignMiddle
   $ setDefaultColAlignment AlignCenter
   $ table rows
   where
     rows :: [ [ Widget Name ] ]
-    rows = [ [ cw ( sb ! ( x, y ) ) | x <- [1..3] ] | y <- [1..3] ]
+    rows = [ [ getCW x y | x <- [1..3] ] | y <- [1..3] ]
 
     getCW :: Int -> Int -> Widget Name
-    getCW x y = let w = cw $ sb ! ( x, y ) in
-      if isFocus && ( x, y ) == ( fx, fx )
+    getCW x y = let w = cW $ sb ! ( x, y ) in
+      if isFocus && ( x, y ) == ( fx, fy )
          then withAttr fCAttr w
-         else withAttr uCAttr w
+         else w
 
-    cw :: Cell -> Widget Name
-    cw = str . displayCell
+    cW :: Cell -> Widget Name
+    cW = padLeftRight 2 . str . displayCell
 
 ----------------------
 
-fSBAttr, uSBAttr :: AttrName
+fSBAttr :: AttrName
 fSBAttr = "fSBAttr"
-uSBAttr = "uSBAttr"
 
-fCAttr, uCAttr :: AttrName
+fCAttr :: AttrName
 fCAttr = "fCAttr"
-uCAttr = "uCAttr"
 
 theMap :: AttrMap
 theMap = attrMap V.defAttr
   [ (fCAttr, V.black `on` V.white)
-  --, (uCAttr, V.white `on` V.black)
   --, (fSBAttr, V.white `on` V.blue)
-  --, (uSBAttr, V.blue `on` V.red)
   ]

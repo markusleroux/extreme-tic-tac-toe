@@ -18,6 +18,7 @@ main = do
            }
   finalState <- defaultMain app initialState
   putStrLn $ displayBoard $ finalState ^. board
+  putStrLn $ show $ finalState ^. meta
   where
     emptySubBoard :: SubBoard
     emptySubBoard = array ((1, 1), (3, 3)) [ ( ( x, y ), Nothing ) | x <- [1..3], y <- [1..3] ]

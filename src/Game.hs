@@ -7,11 +7,12 @@ import Data.List (intercalate)
 import Data.Foldable (asum)
 import Data.Maybe (isJust)
 
-import Control.Applicative (Alternative)
+import Control.Applicative (Alternative, (<|>))
 import Control.Lens.Tuple
+import Control.Lens.At (ix)
 
 import Lens.Micro.TH (makeLenses)
-import Lens.Micro ((^.), (&), (%~), (.~))
+import Lens.Micro ((^.), (&), (%~), (.~), (?~), (^?!))
 
 -- Types
 --------------------------
@@ -39,14 +40,13 @@ displayBoard b = "\n" ++ intercalate longBar [ displayBoardRow y | y <- [1..3] ]
 
     -- display entire row across multiple subboards
     displayAcross :: Int -> Int -> String
-    displayAcross y y' = intercalate "  |  " [ displaySBRow x y y' | x <- [1..3]]
+    displayAcross y y' = intercalate "  |  " [ displaySBRow x y y' | x <- [1..3] ]
 
     displaySBRow :: Int -> Int -> Int -> String
-    displaySBRow x y y' = intercalate " | " [displayCell $ ( b ! (x, y) ) ! (x', y') | x' <- [1..3]]
+    displaySBRow x y y' = intercalate " | " [ displayCell $ ( b ! (x, y) ) ! (x', y') | x' <- [1..3] ]
 
 updateBoard :: Move -> Position -> Position -> Board -> Board
-updateBoard move pos newPos b = b // [(pos, newSubBoard)]
-  where newSubBoard = b ! pos // [(newPos, Just move)]
+updateBoard move pos newPos = ix pos . ix newPos ?~ move
 
 data GameState =
   GS { _board :: Board          -- the board shown on the screen
@@ -82,38 +82,32 @@ playSquare gs =
      else playEmptySquare gs
 
 playEmptySquare :: GameState -> GameState
-playEmptySquare gs =
+playEmptySquare gs = let pos = gs ^. ppos in
   gs
-    & player %~ ( \ p -> if p == X then O else X )
     & board %~ updateBoard ( gs ^. player ) pos ( gs ^. cursor )
-    & meta .~ updatedMeta
+    & meta . ix pos %~ ( \ mvMb -> mvMb <|> ( hasWinnerMb $ gs ^?! board . ix pos ) )         -- will never be out of bounds
     & ppos .~ ( gs ^. cursor )
     & finished .~ ( hasWinnerMb $ gs ^. meta )
-  where
-    pos :: Position
-    pos = gs ^. ppos            -- is this a risk?
-
-    updatedMeta :: SubBoard
-    updatedMeta =
-      if ( gs ^. meta ) ! pos == Nothing && isJust ( hasWinnerMb $ ( gs ^. board ) ! ( gs ^. ppos ) )
-        then ( gs ^. meta ) // [ (pos, Just $ gs ^. player) ]
-        else gs ^. meta
+    & player %~ ( \ p -> if p == X then O else X )
              
 -- The list of three in a rows
 rows :: [[Position]]
-rows = [ [ (i, j) | i <- [1..3]] | j <- [1..3] ] ++
-       [ [ (i, j) | j <- [1..3]] | i <- [1..3] ] ++
-       [ [ (i, i) | i <- [1..3]], [(i, 4 - i) | i <- [1..3]] ]
+rows = [ [ ( i, j ) | i <- [1..3] ] | j <- [1..3] ] ++
+       [ [ ( i, j ) | j <- [1..3] ] | i <- [1..3] ] ++
+       [ [ ( i, i ) | i <- [1..3] ], [ ( i, 4 - i ) | i <- [1..3] ] ]
 
 hasWinnerMb :: SubBoard -> Maybe Move
 hasWinnerMb = asumMap rows $ allCaptured
-  where
-    -- Given a list of list of indices, apply the function with signature [e] -> f a to each
-    -- list of values in the corresponding list of list of values. Then use <|> repeatedly on
-    -- the resulting list [ f a ] to arrive at a single f a
-    asumMap :: ( Ix i, Alternative f ) => [[i]] -> ( [e] -> f a ) -> Array i e -> f a
-    asumMap rs p arr = asum ( map p [ [ arr ! pos | pos <- r ] | r <- rs ] )
 
-    -- Return Just Move if everything in the list is held by the same person otherwise return Nothing
-    allCaptured :: [Maybe Move] -> Maybe Move
-    allCaptured msMb = if and $ map ( == head msMb ) ( tail msMb ) then head msMb else Nothing
+-- Given a list of list of indices, apply the function with signature [e] -> f a to each
+-- list of values in the corresponding list of list of values. Then use <|> repeatedly on
+-- the resulting list [ f a ] to arrive at a single f a
+asumMap :: ( Ix i, Alternative f ) => [[i]] -> ( [e] -> f a ) -> Array i e -> f a
+asumMap rs p arr = asum [ p [ arr ! pos | pos <- r ] | r <- rs ]
+
+-- Return Just Move if everything in the list is held by the same person otherwise return Nothing
+allCaptured :: [Maybe Move] -> Maybe Move
+allCaptured msMb = if and $ map ( == head msMb ) ( tail msMb ) then head msMb else Nothing
+
+count :: Move -> SubBoard -> Int
+count move = length . filter ( == Just move ) . elems
