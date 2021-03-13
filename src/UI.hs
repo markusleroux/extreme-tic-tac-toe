@@ -8,7 +8,7 @@ import Brick
 import Brick.Widgets.Table
 
 import Data.Array ((!))
-import Lens.Micro ((^.))
+import Lens.Micro ((^.), (^?!), ix)
 
 import qualified Brick.Widgets.Center as C
 import qualified Brick.Widgets.Border as B
@@ -34,7 +34,7 @@ handleEvent gs (VtyEvent (V.EvKey V.KUp []))         = continue $ moveCursor Nor
 handleEvent gs (VtyEvent (V.EvKey V.KDown []))       = continue $ moveCursor South gs
 handleEvent gs (VtyEvent (V.EvKey V.KRight []))      = continue $ moveCursor East gs
 handleEvent gs (VtyEvent (V.EvKey V.KLeft []))       = continue $ moveCursor West gs
-handleEvent gs (VtyEvent (V.EvKey V.KEnter []))      = continue $ playSquare gs
+handleEvent gs (VtyEvent (V.EvKey V.KEnter []))      = continue $ play gs
 handleEvent gs (VtyEvent (V.EvKey (V.KChar 'q') [])) = halt gs
 handleEvent gs (VtyEvent (V.EvKey V.KEsc []))        = halt gs
 handleEvent gs _                                     = continue gs
@@ -73,16 +73,16 @@ boardW gs = C.centerLayer
     rowsOfSBW = [ [ getSBW x y | x <- [1..3] ] | y <- [1..3] ]
 
     getSBW :: Int -> Int -> Widget Name
-    getSBW x y = let ( fx, fy ) = gs ^. cursor
-                     isFocus = ( x, y ) == ( gs ^. ppos )
-                     w = subBoardW fx fy isFocus $ ( gs ^. board ) ! ( x, y ) in
-      if isFocus
+    getSBW xB yB = let ( xSB, ySB ) = gs ^. cursor
+                       hasFocusedCell = ( gs ^. hasMoves ) && ( xB, yB ) == ( gs ^. ppos )
+                       w = subBoardW xSB ySB hasFocusedCell $ ( gs ^. board ) ! ( xB, yB ) in
+      if not ( gs ^. hasMoves ) && ( xB, yB ) == ( xSB, ySB )
          then withAttr fSBAttr w
          else w
 
 
 subBoardW :: Int -> Int -> Bool -> SubBoard -> Widget Name
-subBoardW fx fy isFocus sb =
+subBoardW xSB ySB hasFocussedCell sb =
   padLeftRight 2
   $ padTopBottom 1
   $ separateBorders
@@ -97,7 +97,7 @@ subBoardW fx fy isFocus sb =
 
     getCW :: Int -> Int -> Widget Name
     getCW x y = let w = cW $ sb ! ( x, y ) in
-      if isFocus && ( x, y ) == ( fx, fy )
+      if hasFocussedCell && ( x, y ) == ( xSB, ySB )
          then withAttr fCAttr w
          else w
 
@@ -115,5 +115,5 @@ fCAttr = "fCAttr"
 theMap :: AttrMap
 theMap = attrMap V.defAttr
   [ (fCAttr, V.black `on` V.white)
-  --, (fSBAttr, V.white `on` V.blue)
+  , (fSBAttr, V.black `on` V.white)
   ]

@@ -5,7 +5,7 @@ module Game where
 import Data.Array
 import Data.List (intercalate)
 import Data.Foldable (asum)
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, isNothing)
 
 import Control.Applicative (Alternative, (<|>))
 import Control.Lens.Tuple
@@ -45,9 +45,6 @@ displayBoard b = "\n" ++ intercalate longBar [ displayBoardRow y | y <- [1..3] ]
     displaySBRow :: Int -> Int -> Int -> String
     displaySBRow x y y' = intercalate " | " [ displayCell $ ( b ! (x, y) ) ! (x', y') | x' <- [1..3] ]
 
-updateBoard :: Move -> Position -> Position -> Board -> Board
-updateBoard move pos newPos = ix pos . ix newPos ?~ move
-
 data GameState =
   GS { _board :: Board          -- the board shown on the screen
      , _meta :: SubBoard        -- a record of who captured which squares
@@ -55,6 +52,7 @@ data GameState =
      , _ppos :: Position        -- the subboard to play in
      , _cursor :: Position      -- the position of the highlighted square in the subboard (default (2,2))
      , _finished :: Maybe Move  -- flag describing who won the game, if there is a winner
+     , _hasMoves :: Bool
      } deriving (Show)
 
 $(makeLenses ''GameState)
@@ -75,21 +73,46 @@ moveCursor West = cursor . _1 %~ ( \ x -> if x > 1 then x - 1 else x )
 -- Game logic
 --------------------------
 
+play :: GameState -> GameState
+play gs =
+  if gs ^. hasMoves
+    then playSquare gs
+    else updateNoMoves $ gs & ppos .~ ( gs ^. cursor )          -- No available squares in SB
+
 playSquare :: GameState -> GameState
 playSquare gs =
-  if isJust $ ( ( gs ^. board ) ! ( gs ^. ppos ) ) ! ( gs ^. cursor )
-     then gs
-     else playEmptySquare gs
+  if isJust $ gs ^?! board . ix ( gs ^. ppos ) . ix ( gs ^. cursor )
+    then gs
+    else playEmptySquare gs
+
+updateNoMoves :: GameState -> GameState
+updateNoMoves gs = gs & hasMoves .~ ( notFull $ gs ^?! board . ix ( gs ^. ppos ) )
+  where
+    notFull :: SubBoard -> Bool
+    notFull = ( /= 0 ) . length . filter isNothing . elems
 
 playEmptySquare :: GameState -> GameState
-playEmptySquare gs = let pos = gs ^. ppos in
-  gs
-    & board %~ updateBoard ( gs ^. player ) pos ( gs ^. cursor )
-    & meta . ix pos %~ ( \ mvMb -> mvMb <|> ( hasWinnerMb $ gs ^?! board . ix pos ) )         -- will never be out of bounds
-    & ppos .~ ( gs ^. cursor )
-    & finished .~ ( hasWinnerMb $ gs ^. meta )
-    & player %~ ( \ p -> if p == X then O else X )
-             
+playEmptySquare = updateNoMoves . updateOthers . updateMeta . updateBoard       -- ORDER DEPENDENT
+  where
+    updateBoard :: GameState -> GameState
+    updateBoard gs = gs & board . ix pos . ix ( gs ^. cursor ) ?~ ( gs ^. player )
+      where
+        pos :: Position
+        pos = gs ^. ppos
+
+    updateMeta :: GameState -> GameState
+    updateMeta gs = gs & meta . ix pos %~ ( \ mvMb -> mvMb <|> ( hasWinnerMb $ gs ^?! board . ix pos ) )         -- will never be out of bounds
+      where
+        pos :: Position
+        pos = gs ^. ppos
+
+    updateOthers :: GameState -> GameState
+    updateOthers gs =
+      gs
+        & ppos .~ ( gs ^. cursor )
+        & finished .~ ( hasWinnerMb $ gs ^. meta )
+        & player %~ ( \ p -> if p == X then O else X )
+
 -- The list of three in a rows
 rows :: [[Position]]
 rows = [ [ ( i, j ) | i <- [1..3] ] | j <- [1..3] ] ++
@@ -99,9 +122,8 @@ rows = [ [ ( i, j ) | i <- [1..3] ] | j <- [1..3] ] ++
 hasWinnerMb :: SubBoard -> Maybe Move
 hasWinnerMb = asumMap rows $ allCaptured
 
--- Given a list of list of indices, apply the function with signature [e] -> f a to each
--- list of values in the corresponding list of list of values. Then use <|> repeatedly on
--- the resulting list [ f a ] to arrive at a single f a
+-- Map a list of list of indices to a list of list of values. Then map the function with
+-- signature [e] -> f a over this list, and apply <|> to the entries in the resulting list
 asumMap :: ( Ix i, Alternative f ) => [[i]] -> ( [e] -> f a ) -> Array i e -> f a
 asumMap rs p arr = asum [ p [ arr ! pos | pos <- r ] | r <- rs ]
 

@@ -9,12 +9,13 @@ import Lens.Micro ((^.))
 main :: IO ()
 main = do
   let initialState =
-        GS { _board = emptyBoard
+        GS { _board = emptyBoard 
            , _meta = emptySubBoard
            , _player = X
            , _ppos = ( 1, 1 )
            , _cursor = ( 1, 1 )
            , _finished = Nothing
+           , _hasMoves = False
            }
   finalState <- defaultMain app initialState
   putStrLn $ displayBoard $ finalState ^. board
