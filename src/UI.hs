@@ -7,8 +7,8 @@ import Game
 import Brick
 import Brick.Widgets.Table
 
-import Data.Array ((!))
-import Lens.Micro ((^.), (^?!), ix)
+import Data.Array (array)
+import Lens.Micro.GHC (ix, (^.), (^?!))
 
 import qualified Brick.Widgets.Center as C
 import qualified Brick.Widgets.Border as B
@@ -24,7 +24,7 @@ app =
       , appChooseCursor = neverShowCursor
       , appHandleEvent = handleEvent
       , appStartEvent = return
-      , appAttrMap = const theMap
+      , appAttrMap = theMap
       }
 
 ----------------------
@@ -37,30 +37,24 @@ handleEvent gs (VtyEvent (V.EvKey V.KLeft []))       = continue $ moveCursor Wes
 handleEvent gs (VtyEvent (V.EvKey V.KEnter []))      = continue $ play gs
 handleEvent gs (VtyEvent (V.EvKey (V.KChar 'q') [])) = halt gs
 handleEvent gs (VtyEvent (V.EvKey V.KEsc []))        = halt gs
+handleEvent _ (VtyEvent (V.EvKey (V.KChar 'r') []))  = continue $ play initialState
 handleEvent gs _                                     = continue gs
 
 ----------------------
 
 drawUI :: GameState -> [ Widget Name ]
-drawUI gs = return ( boardW gs <+> scoresW gs )
+drawUI gs = return ( boardW gs <+> metaW gs )
 
-scoresW :: GameState -> Widget Name
-scoresW gs = let met = gs ^. meta in
+metaW :: GameState -> Widget Name
+metaW gs =
   C.vCenter
   $ padLeft ( Pad 10 )
-  $ hLimit 8
-  $ vLimit 4
-  $ vBox [ C.hCenter $ str "Score"
-         , C.hCenter $ B.hBorder
-         , C.hCenter $ scoreW X met
-         , C.hCenter $ scoreW O met
-         ]
-
-scoreW :: Move -> SubBoard -> Widget Name
-scoreW mv sb = str $ show mv ++ ": " ++ ( show $ count mv sb )
+  $ B.borderWithLabel ( str " Score " )
+  $ subBoardW ( 1, 1 ) False ( gs ^. meta )
 
 boardW :: GameState -> Widget Name
-boardW gs = C.centerLayer
+boardW gs =
+  C.centerLayer
   $ B.borderWithLabel ( str " TicTacToe " )
   $ separateBorders
   $ renderTable
@@ -70,19 +64,18 @@ boardW gs = C.centerLayer
   $ table rowsOfSBW
   where
     rowsOfSBW :: [ [ Widget Name ] ]
-    rowsOfSBW = [ [ getSBW x y | x <- [1..3] ] | y <- [1..3] ]
+    rowsOfSBW = [ [ getSBW ( x, y ) | x <- [1..3] ] | y <- [1..3] ]
 
-    getSBW :: Int -> Int -> Widget Name
-    getSBW xB yB = let ( xSB, ySB ) = gs ^. cursor
-                       hasFocusedCell = ( gs ^. hasMoves ) && ( xB, yB ) == ( gs ^. ppos )
-                       w = subBoardW xSB ySB hasFocusedCell $ ( gs ^. board ) ! ( xB, yB ) in
-      if not ( gs ^. hasMoves ) && ( xB, yB ) == ( xSB, ySB )
-         then withAttr fSBAttr w
-         else w
+    getSBW :: Position -> Widget Name
+    getSBW posSB = let hasFocusedCell   = ( gs ^. hasMoves ) && posSB == ( gs ^. ppos )
+                       isFocussedSB     = not ( gs ^. hasMoves ) && posSB == ( gs ^. cursor )
+                       wSB              = subBoardW ( gs ^. cursor ) hasFocusedCell $ gs ^?! board . ( ix posSB ) in
+      if isFocussedSB
+         then withAttr fAttr wSB
+         else wSB
 
-
-subBoardW :: Int -> Int -> Bool -> SubBoard -> Widget Name
-subBoardW xSB ySB hasFocussedCell sb =
+subBoardW :: Position -> Bool -> SubBoard -> Widget Name
+subBoardW posFC hasFocussedCell sb =
   padLeftRight 2
   $ padTopBottom 1
   $ separateBorders
@@ -90,30 +83,43 @@ subBoardW xSB ySB hasFocussedCell sb =
   $ surroundingBorder False
   $ setDefaultRowAlignment AlignMiddle
   $ setDefaultColAlignment AlignCenter
-  $ table rows
+  $ table cWs
   where
-    rows :: [ [ Widget Name ] ]
-    rows = [ [ getCW x y | x <- [1..3] ] | y <- [1..3] ]
+    cWs :: [ [ Widget Name ] ]
+    cWs = [ [ getCW ( x, y ) | x <- [1..3] ] | y <- [1..3] ]
 
-    getCW :: Int -> Int -> Widget Name
-    getCW x y = let w = cW $ sb ! ( x, y ) in
-      if hasFocussedCell && ( x, y ) == ( xSB, ySB )
-         then withAttr fCAttr w
-         else w
+    getCW :: Position -> Widget Name
+    getCW posC = let wC = cW $ sb ^?! ix posC in
+      if hasFocussedCell && posC == posFC
+         then withAttr fAttr wC
+         else wC
 
     cW :: Cell -> Widget Name
     cW = padLeftRight 2 . str . displayCell
 
 ----------------------
 
-fSBAttr :: AttrName
-fSBAttr = "fSBAttr"
+fAttr :: AttrName
+fAttr = "fAttr"
 
-fCAttr :: AttrName
-fCAttr = "fCAttr"
+theMap :: GameState -> AttrMap
+theMap gs = case gs ^. player of
+              X -> attrMap V.defAttr [ (fAttr, V.black `on` V.blue) ]
+              O -> attrMap V.defAttr [ (fAttr, V.black `on` V.yellow) ]
 
-theMap :: AttrMap
-theMap = attrMap V.defAttr
-  [ (fCAttr, V.black `on` V.white)
-  , (fSBAttr, V.black `on` V.white)
-  ]
+initialState :: GameState
+initialState =
+        GS { _board = emptyBoard 
+           , _meta = emptySubBoard
+           , _player = X
+           , _ppos = ( 2, 2 )
+           , _cursor = ( 2, 2 )
+           , _finished = Nothing
+           , _hasMoves = False                  -- choose initial sb
+           }
+        
+emptySubBoard :: SubBoard
+emptySubBoard = array ((1, 1), (3, 3)) [ ( ( x, y ), Nothing ) | x <- [1..3], y <- [1..3] ]
+
+emptyBoard :: Board
+emptyBoard = array ((1, 1), (3, 3)) [ ( ( x, y ), emptySubBoard ) | x <- [1..3], y <- [1..3] ]

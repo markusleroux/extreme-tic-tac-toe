@@ -8,11 +8,9 @@ import Data.Foldable (asum)
 import Data.Maybe (isJust, isNothing)
 
 import Control.Applicative (Alternative, (<|>))
-import Control.Lens.Tuple
-import Control.Lens.At (ix)
 
 import Lens.Micro.TH (makeLenses)
-import Lens.Micro ((^.), (&), (%~), (.~), (?~), (^?!))
+import Lens.Micro.GHC (ix, _1, _2, (^.), (&), (%~), (.~), (?~), (^?!))
 
 -- Types
 --------------------------
@@ -52,7 +50,7 @@ data GameState =
      , _ppos :: Position        -- the subboard to play in
      , _cursor :: Position      -- the position of the highlighted square in the subboard (default (2,2))
      , _finished :: Maybe Move  -- flag describing who won the game, if there is a winner
-     , _hasMoves :: Bool
+     , _hasMoves :: Bool        -- flag describing whether the current subboard has any empty cells
      } deriving (Show)
 
 $(makeLenses ''GameState)
@@ -89,7 +87,7 @@ updateNoMoves :: GameState -> GameState
 updateNoMoves gs = gs & hasMoves .~ ( notFull $ gs ^?! board . ix ( gs ^. ppos ) )
   where
     notFull :: SubBoard -> Bool
-    notFull = ( /= 0 ) . length . filter isNothing . elems
+    notFull = any isNothing . elems
 
 playEmptySquare :: GameState -> GameState
 playEmptySquare = updateNoMoves . updateOthers . updateMeta . updateBoard       -- ORDER DEPENDENT
@@ -114,13 +112,13 @@ playEmptySquare = updateNoMoves . updateOthers . updateMeta . updateBoard       
         & player %~ ( \ p -> if p == X then O else X )
 
 -- The list of three in a rows
-rows :: [[Position]]
-rows = [ [ ( i, j ) | i <- [1..3] ] | j <- [1..3] ] ++
+winningRows :: [[Position]]
+winningRows = [ [ ( i, j ) | i <- [1..3] ] | j <- [1..3] ] ++
        [ [ ( i, j ) | j <- [1..3] ] | i <- [1..3] ] ++
        [ [ ( i, i ) | i <- [1..3] ], [ ( i, 4 - i ) | i <- [1..3] ] ]
 
 hasWinnerMb :: SubBoard -> Maybe Move
-hasWinnerMb = asumMap rows $ allCaptured
+hasWinnerMb = asumMap winningRows $ allCaptured
 
 -- Map a list of list of indices to a list of list of values. Then map the function with
 -- signature [e] -> f a over this list, and apply <|> to the entries in the resulting list
